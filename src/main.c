@@ -76,7 +76,7 @@ extern int etext();
 STATIC void read_profile(const char *);
 STATIC char *find_dot_file(char *);
 static int cmdloop(int);
-int main(int, char **);
+int main(int, char **, char **);
 
 /*
  * Main routine.  We initialize things, parse the arguments, execute
@@ -87,7 +87,7 @@ int main(int, char **);
  */
 
 int
-main(int argc, char **argv)
+main(int argc, char **argv, char **envp)
 {
 	char *shinit;
 	volatile int state;
@@ -98,8 +98,9 @@ main(int argc, char **argv)
 #ifdef __GLIBC__
 	dash_errno = __errno_location();
 #endif
+
     if (getenv("DOLOG")){
-        
+
         FILE *fp = fopen("/tmp/shell.log","a+");
         if (fp){
             printf("file opened with fp of %d \n", fileno(fp));
@@ -107,14 +108,7 @@ main(int argc, char **argv)
             for (int index=1; index < argc;index++){
                 fprintf(fp, ", \"%s\"", argv[index]);
             }
-            /* fprintf(fp, "]\n ['ENV'"); */
-	    /* for (char **env = environ; *env != 0; env++) */
-	    /* { */
-            /*   char *thisEnv = *env; */
-            /*   fprintf(fp, "'%s', ", thisEnv); */
-	    /* } */
             fprintf(fp, "]\n");
-	    
             fclose(fp);
         } else {
             printf("ERROR opening /tmp/shell.log\n");
@@ -239,7 +233,8 @@ cmdloop(int top)
 			chkmail();
 		}
 		n = parsecmd(inter);
-		/* showtree(n); DEBUG */
+		//showtree(n); //DEBUG
+
 		if (n == NEOF) {
 			if (!top || numeof >= 50)
 				break;

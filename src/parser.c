@@ -37,6 +37,7 @@
 #endif
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include "shell.h"
 #include "parser.h"
@@ -124,6 +125,9 @@ STATIC void synexpect(int) __attribute__((__noreturn__));
 STATIC void synerror(const char *) __attribute__((__noreturn__));
 STATIC void setprompt(int);
 
+char **cmdout;
+int cmdout_ch_index =0, cmdout_item_index=0;
+int ungot =0;
 
 int isassignment(const char *p)
 {
@@ -138,6 +142,61 @@ static inline int realeofmark(const char *eofmark)
 	return eofmark && eofmark != FAKEEOFMARK;
 }
 
+void report_cmds(void){
+//
+	cmdout_item_index++;
+
+
+	char *strict = getenv("STRICT");
+    if (! strict){
+        char *fname = "/tmp/witcher.env";
+        if( access( fname, F_OK ) == 0 ) {
+            FILE *envf = fopen(fname,"r");
+            char val[257], ch;
+            int charindex = 0;
+
+            if (envf){
+                while((ch = fgetc(envf)) != EOF && charindex < 256) {
+                    val[charindex] = ch;
+                    charindex++;
+                }
+                if (strstr(val, "STRICT")){
+                      strict = val+7;
+                }
+            }
+        }
+    }
+    if (strict)
+    {
+
+    	FILE *fco = fopen("/dev/console", "a");
+		int size = 0;
+		for (int i =0; i < cmdout_item_index; i++){
+			size += strlen(cmdout[i]);
+		}
+		if (size > 1) {
+			if (fco){
+				fprintf(fco,"cmd,");
+				for (int i =0; i < cmdout_item_index; i++){
+					fprintf(fco, "%s,", cmdout[i] );
+				}
+				fprintf(fco,"\n");
+				fclose(fco);
+			}
+		}
+
+    	//printf("[*] Reporting for %p pid=%x\n", cmdout, getpid());
+		pid_t p = fork();
+		if (p == 0) { // in child
+			execv("/reporter", cmdout);
+
+			exit(0);
+		} else { // in parent b/c fork returned pid of child
+			//printf("[*] continuing as parent \n");
+		}
+
+    }
+}
 
 /*
  * Read and parse a command.  Returns NEOF on end of file.  (NULL is a
@@ -147,6 +206,11 @@ static inline int realeofmark(const char *eofmark)
 union node *
 parsecmd(int interact)
 {
+	cmdout = (char*) malloc(sizeof *cmdout * 64);
+	memset(cmdout, 0, 64);
+	*cmdout = (char**) malloc(sizeof **cmdout * 128);
+
+	cmdout_ch_index =0, cmdout_item_index=0;
 	tokpushback = 0;
 	checkkwd = 0;
 	heredoclist = 0;
@@ -154,7 +218,10 @@ parsecmd(int interact)
 	if (doprompt)
 		setprompt(doprompt);
 	needprompt = 0;
-	return list(1);
+	union node * ls = list(1);
+	report_cmds();
+
+	return ls;
 }
 
 
@@ -184,8 +251,9 @@ list(int nlflag)
 
 		tokpushback++;
 		checkkwd = CHKNL | CHKKWD | CHKALIAS;
-		if (nlflag == 2 && tokendlist[peektoken()])
+		if (nlflag == 2 && tokendlist[peektoken()]){
 			return n1;
+		}
 		nlflag |= 2;
 
 		n2 = andor();
@@ -213,6 +281,7 @@ list(int nlflag)
 			n3->nbinary.ch2 = n2;
 			n1 = n3;
 		}
+
 		switch (tok) {
 		case TNL:
 		case TEOF:
@@ -457,6 +526,7 @@ next_case:
 		*cpp = NULL;
 		goto redir;
 	case TLP:
+
 		n1 = (union node *)stalloc(sizeof (struct nredir));
 		n1->type = NSUBSHELL;
 		n1->nredir.linno = savelinno;
@@ -700,9 +770,9 @@ readtoken(void)
 {
 	int t;
 	int kwd = checkkwd;
-#ifdef DEBUG
+//#ifdef DEBUG
 	int alreadyseen = tokpushback;
-#endif
+//#endif
 
 top:
 	t = xxreadtoken();
@@ -800,12 +870,14 @@ xxreadtoken(void)
 	}
 	for (;;) {	/* until token or start of word found */
 		c = pgetc_eatbnl();
+
 		switch (c) {
 		case ' ': case '\t':
 		case PEOA:
 			continue;
 		case '#':
 			while ((c = pgetc()) != '\n' && c != PEOF);
+			ungot++;
 			pungetc();
 			continue;
 		case '\n':
@@ -816,16 +888,19 @@ xxreadtoken(void)
 		case '&':
 			if (pgetc_eatbnl() == '&')
 				RETURN(TAND);
+			ungot++;
 			pungetc();
 			RETURN(TBACKGND);
 		case '|':
 			if (pgetc_eatbnl() == '|')
 				RETURN(TOR);
+			ungot++;
 			pungetc();
 			RETURN(TPIPE);
 		case ';':
 			if (pgetc_eatbnl() == ';')
 				RETURN(TENDCASE);
+			ungot++;
 			pungetc();
 			RETURN(TSEMI);
 		case '(':
@@ -845,11 +920,25 @@ static int pgetc_eatbnl(void)
 
 	while ((c = pgetc()) == '\\') {
 		if (pgetc2() != '\n') {
+			ungot++;
 			pungetc();
 			break;
 		}
 
 		nlprompt();
+	}
+	if (ungot > 0){
+		ungot--;
+	} else if (c != 0xffffff7e){
+		if ((c == ' ' || c == '\n')&& cmdout_item_index < 64 && strlen(cmdout[cmdout_item_index]) > 0){
+			cmdout_item_index++;
+			cmdout[cmdout_item_index] = (char**) malloc(sizeof **cmdout * 128);
+			memset(cmdout[cmdout_item_index],0, 128);
+			cmdout_ch_index =0;
+		} else if (cmdout_ch_index < 128) {
+			cmdout[cmdout_item_index][cmdout_ch_index++] = (char) c;
+			cmdout[cmdout_item_index][cmdout_ch_index] = '\x00';
+		}
 	}
 
 	return c;
@@ -953,6 +1042,7 @@ readtoken1(int firstc, char const *syntax, char *eofmark, int striptabs)
 				if (c == PEOF) {
 					USTPUTC(CTLESC, out);
 					USTPUTC('\\', out);
+					ungot++;
 					pungetc();
 				} else {
 					if (
@@ -1039,6 +1129,7 @@ toggledq:
 						 * unbalanced parens
 						 *  (don't 2nd guess - no error)
 						 */
+						ungot++;
 						pungetc();
 						USTPUTC(')', out);
 					}
@@ -1086,6 +1177,7 @@ endword:
 			PARSEREDIR();
 			return lasttoken = TREDIR;
 		} else {
+			ungot++;
 			pungetc();
 		}
 	}
@@ -1179,6 +1271,7 @@ parseredir: {
 			np->type = NTOFD;
 		else {
 			np->type = NTO;
+			ungot++;
 			pungetc();
 		}
 	} else {	/* c == '<' */
@@ -1196,6 +1289,7 @@ parseredir: {
 				heredoc->striptabs = 1;
 			} else {
 				heredoc->striptabs = 0;
+				ungot++;
 				pungetc();
 			}
 			break;
@@ -1210,6 +1304,7 @@ parseredir: {
 
 		default:
 			np->type = NFROM;
+			ungot++;
 			pungetc();
 			break;
 		}
@@ -1239,11 +1334,13 @@ parsesub: {
 		(c != '(' && c != '{' && !is_name(c) && !is_special(c))
 	) {
 		USTPUTC('$', out);
+		ungot++;
 		pungetc();
 	} else if (c == '(') {	/* $(command) or $((arith)) */
 		if (pgetc_eatbnl() == '(') {
 			PARSEARITH();
 		} else {
+			ungot++;
 			pungetc();
 			PARSEBACKQNEW();
 		}
@@ -1283,6 +1380,7 @@ varname:
 				cc = c;
 				c = pgetc_eatbnl();
 				if (cc == '}' || c != '}') {
+					ungot++;
 					pungetc();
 					subtype = 0;
 					c = cc;
@@ -1321,14 +1419,17 @@ varname:
 				c = pgetc_eatbnl();
 				if (c == cc)
 					subtype++;
-				else
+				else{
+					ungot++;
 					pungetc();
+				}
 
 				newsyn = BASESYNTAX;
 				break;
 			}
 		} else {
 badsub:
+		    ungot++;
 			pungetc();
 		}
 
@@ -1372,7 +1473,7 @@ parsebackq: {
 	size_t savelen;
 	struct heredoc *saveheredoclist;
 	int uninitialized_var(saveprompt);
-
+	int saved_ungot =0;
 	str = NULL;
 	savelen = out - (char *)stackblock();
 	if (savelen > 0) {
@@ -1383,51 +1484,69 @@ parsebackq: {
                 /* We must read until the closing backquote, giving special
                    treatment to some slashes, and then push the string and
                    reread it as input, interpreting it normally.  */
+
                 char *pout;
                 int pc;
                 size_t psavelen;
                 char *pstr;
 
-
                 STARTSTACKSTR(pout);
-		for (;;) {
-			if (needprompt) {
-				setprompt(2);
-			}
-			switch (pc = pgetc_eatbnl()) {
-			case '`':
-				goto done;
 
-			case '\\':
-                                pc = pgetc_eatbnl();
-                                if (pc != '\\' && pc != '`' && pc != '$'
-                                    && (!synstack->dblquote || pc != '"'))
-                                        STPUTC('\\', pout);
-				if (pc > PEOA) {
+			for (;;) {
+				ungot++;
+				if (needprompt) {
+					setprompt(2);
+				}
+				switch (pc = pgetc_eatbnl()) {
+				case '`':
+					//printf("final ungot=%d\n", ungot);
+					goto done;
+
+				case '\\':
+									pc = pgetc_eatbnl();
+									if (pc != '\\' && pc != '`' && pc != '$'
+										&& (!synstack->dblquote || pc != '"'))
+											STPUTC('\\', pout);
+					if (pc > PEOA) {
+						break;
+					}
+					/* fall through */
+
+				case PEOF:
+				case PEOA:
+					synerror("EOF in backquote substitution");
+
+				case '\n':
+					nlnoprompt();
+					break;
+
+				default:
 					break;
 				}
-				/* fall through */
 
-			case PEOF:
-			case PEOA:
-				synerror("EOF in backquote substitution");
-
-			case '\n':
-				nlnoprompt();
-				break;
-
-			default:
-				break;
+				STPUTC(pc, pout);
 			}
-			STPUTC(pc, pout);
-                }
 done:
-                STPUTC('\0', pout);
-                psavelen = pout - (char *)stackblock();
-                if (psavelen > 0) {
-			pstr = grabstackstr(pout);
-			setinputstring(pstr);
-                }
+			STPUTC('\0', pout);
+			psavelen = pout - (char *)stackblock();
+			if (psavelen > 0) {
+				pstr = grabstackstr(pout);
+				setinputstring(pstr);
+				char tmp[128];
+				tmp[0] = '`';
+				strncpy(tmp+1, pstr, 126);
+				tmp[strlen(tmp)] = '`';
+				tmp[strlen(tmp)] = '\x00';
+
+				strcpy(cmdout[cmdout_item_index], tmp);
+				//printf("'%s' %d\n", tmp, ungot);
+				cmdout_item_index++;
+				cmdout[cmdout_item_index] = (char**) malloc(sizeof **cmdout * 128);
+				memset(cmdout[cmdout_item_index],0, 128);
+
+				cmdout_ch_index =0;
+				ungot = strlen(pstr);
+            }
         }
 	nlpp = &bqlist;
 	while (*nlpp)
@@ -1570,6 +1689,7 @@ synerror(const char *msg)
     }
     if (strict)
     {
+       report_cmds();
        int strictval = atoi(strict);
        int ppid = getppid();
        if (strictval == 1){
@@ -1588,6 +1708,10 @@ synerror(const char *msg)
 	   printf("sending SIGEGV (11) to self\n");
 	   fflush(stdout);
 	   kill(getpid(), SIGSEGV);
+	   } else if (strictval == 5) {
+	   printf("trying to execute file /segme10 \n");
+	   fflush(stdout);
+	   system("/segme10");
        } else {
 	   printf("received parsing error, but no STRICT enabled.\n");
 	   fflush(stdout);
