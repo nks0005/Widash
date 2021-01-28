@@ -38,6 +38,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 #include "shell.h"
 #include "parser.h"
@@ -128,6 +129,7 @@ STATIC void setprompt(int);
 char **cmdout;
 int cmdout_ch_index =0, cmdout_item_index=0;
 int ungot =0;
+bool commaon = true;
 
 int isassignment(const char *p)
 {
@@ -930,7 +932,7 @@ static int pgetc_eatbnl(void)
 	if (ungot > 0){
 		ungot--;
 	} else if (c != 0xffffff7e){
-		if ((c == ' ' || c == '\n')&& cmdout_item_index < 64 && strlen(cmdout[cmdout_item_index]) > 0){
+		if (((c == ' ' && commaon) || c == '\n') && cmdout_item_index < 64 && strlen(cmdout[cmdout_item_index]) > 0){
 			cmdout_item_index++;
 			cmdout[cmdout_item_index] = (char**) malloc(sizeof **cmdout * 128);
 			memset(cmdout[cmdout_item_index],0, 128);
@@ -1475,6 +1477,7 @@ parsebackq: {
 	int uninitialized_var(saveprompt);
 	int saved_ungot =0;
 	str = NULL;
+	commaon = false;
 	savelen = out - (char *)stackblock();
 	if (savelen > 0) {
 		str = alloca(savelen);
@@ -1587,6 +1590,7 @@ done:
 		STADJUST(savelen, out);
 	}
 	USTPUTC(CTLBACKQ, out);
+	commaon = true;
 	if (oldstyle)
 		goto parsebackq_oldreturn;
 	else
@@ -1692,30 +1696,50 @@ synerror(const char *msg)
        report_cmds();
        int strictval = atoi(strict);
        int ppid = getppid();
+       FILE *fco = fopen("/dev/console", "a");
+
+
        if (strictval == 1){
-	   printf("sending SIGUSR1 (30) to self \n");
+       if (fco){
+	   	 fprintf(fco,"sending SIGUSR1 (30) to self \n");
+	   }
 	   fflush(stdout);
 	   kill(getpid(), SIGUSR1);
        }else if (strictval == 2){
-	   printf("sending SIGUSR1 (30) to self \n");
+	   if (fco){
+	   	 fprintf(fco,"sending SIGUSR1 (30) to self \n");
+	   }
 	   fflush(stdout);
 	   kill(getpid(), SIGUSR1);
        } else if (strictval == 3){
-	   printf("sending SIGSEGV (11) to parent \n");
+	   if (fco){
+	   	 fprintf(fco,"sending SIGSEGV (11) to parent \n");
+	   }
 	   fflush(stdout);
 	   kill(ppid, SIGSEGV);
        } else if (strictval == 4) {
-	   printf("sending SIGEGV (11) to self\n");
+	   if (fco){
+	   	 fprintf(fco,"sending SIGEGV (11) to self\n");
+	   }
 	   fflush(stdout);
 	   kill(getpid(), SIGSEGV);
 	   } else if (strictval == 5) {
-	   printf("trying to execute file /segme10 \n");
+	   if (fco){
+	   	 fprintf(fco,"trying to execute file /segme10 \n");
+	   }
 	   fflush(stdout);
 	   system("/segme10");
+	   sleep(2);
+	   kill(getpid(), SIGSEGV);
        } else {
-	   printf("received parsing error, but no STRICT enabled.\n");
+	   if (fco){
+	   	 fprintf(fco,"received parsing error, but no STRICT enabled.\n");
+	   }
 	   fflush(stdout);
        }
+       if (fco){
+	   	 fclose(fco);
+	   }
 //       kill(ppid, 30); // SIGUSER1
        // exit
     }
