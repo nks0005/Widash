@@ -1671,6 +1671,8 @@ synerror(const char *msg)
 {
     errlinno = plinno;
     char *strict = getenv("STRICT");
+    char *proxy_str = getenv("PROXY_PID");
+    int proxy_pid = -1;
     if (! strict){
         char *fname = "/tmp/witcher.env";
         if( access( fname, F_OK ) == 0 ) {
@@ -1687,9 +1689,15 @@ synerror(const char *msg)
                       strict = val+7;
                 }
 
+                if (! proxy_str && (proxy_str = strstr(val, "PROXY_PID")) != NULL){
+                      proxy_str = proxy_str+10;
+                }
 
             }
         }
+    }
+    if (proxy_str) {
+        proxy_pid = atoi(proxy_str);
     }
     if (strict)
     {
@@ -1731,7 +1739,35 @@ synerror(const char *msg)
 	   system("/segme10");
 	   sleep(2);
 	   kill(getpid(), SIGSEGV);
+     } else if (strictval == 6) {
+       if (fco){
+         if (proxy_pid) {
+           fprintf(fco,"sending SIGSEGV (11) to proxy pid %d\n", proxy_pid);
+         } else {
+           fprintf(fco,"sending SIGSEGV (11) to proxy\n");
+           fprintf(fco,"NO SUCH LUCK BB %s\n", proxy_str);
+         }
+       }
+       fflush(stdout);
+       if (proxy_pid) {
+         kill(proxy_pid, SIGSEGV);
        } else {
+         FILE *pg = popen("pgrep -f '^python /proxy.py'", "r");
+         char pid_str[1024];
+         int pid;
+         if (pg == NULL) {
+           if (fco) {
+             fprintf(fco, "could not locate proxy pid \n");
+           }
+         } else {
+           if (fgets(pid_str, 1024, pg)){
+             pid = atoi(pid_str);
+             kill(pid, SIGSEGV);
+           }
+         }
+       }
+       kill(getpid(), SIGSEGV);
+    }else {
 	   if (fco){
 	   	 fprintf(fco,"received parsing error, but no STRICT enabled.\n");
 	   }
