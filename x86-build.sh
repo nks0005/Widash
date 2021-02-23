@@ -31,7 +31,7 @@ if ! make -j$(nproc); then
     printf "\033[32mBUILD FAILED on $CC\033[0m"
     exit 64
 fi
-cp src/dash archbuilds/dash.${OUTEXT}
+cp src/dash archbuilds/dash
 
 unset CLAGS
 unset LDFLAGS
