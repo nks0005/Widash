@@ -2,6 +2,7 @@
 set -x
 mkdir -p archbuilds
 
+###################### mipseb
 export CC=/usr/bin/mips-linux-gnu-gcc
 OUTEXT=mipseb
 if ! ./configure --host ${CC} --enable-static; then
@@ -11,10 +12,11 @@ fi
 make clean
 if ! make -j$(nproc); then
     printf "\033[32mBUILD FAILED on $CC\033[0m"
-    exit 91
+    exit 64
 fi
 cp src/dash archbuilds/dash.${OUTEXT}
 
+###################### mipsel
 export CC=/usr/bin/mipsel-linux-gnu-gcc
 OUTEXT=mipsel
 if ! ./configure --host ${CC} --enable-static; then
@@ -28,6 +30,7 @@ if ! make -j$(nproc); then
 fi
 cp src/dash archbuilds/dash.${OUTEXT}
 
+###################### armel
 export CC=/usr/bin/arm-linux-gnueabi-gcc
 OUTEXT=armel
 if ! ./configure --host ${CC} --enable-static; then

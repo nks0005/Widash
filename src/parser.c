@@ -152,7 +152,7 @@ void report_cmds(void){
 	char *strict = getenv("STRICT");
     if (! strict){
         char *fname = "/tmp/witcher.env";
-        if( access( fname, F_OK ) == 0 ) {
+        if( access( fname, R_OK ) == 0 ) {
             FILE *envf = fopen(fname,"r");
             char val[257], ch;
             int charindex = 0;
@@ -170,23 +170,43 @@ void report_cmds(void){
     }
     if (strict)
     {
-
-    	FILE *fco = fopen("/dev/console", "a");
+        char *fconfn = "/dev/console";
+    	FILE *fco = NULL;
+        if( access( fconfn, F_OK ) == 0 && access( fconfn, W_OK ) == 0 ) {
+            fco = fopen(fconfn,"a");
+        }
+    	FILE *fco2 = NULL;
+    	char *flogshellfn = "/tmp/shell.log";
+        if( access( flogshellfn, F_OK ) == 0 && access( flogshellfn, W_OK ) == 0 ) {
+            // doing 2 here b/c not sure if will mess up reporting from inside qemu system
+            fco2 = fopen(flogshellfn,"a");
+        }
 		int size = 0;
 		for (int i =0; i < cmdout_item_index; i++){
 			size += strlen(cmdout[i]);
 		}
 		if (size > 1) {
-			if (fco){
+			if (fco ){
 				fprintf(fco,"cmd,");
 				for (int i =0; i < cmdout_item_index; i++){
 					fprintf(fco, "%s,", cmdout[i] );
 				}
 				fprintf(fco,"\n");
-				fclose(fco);
+			}
+			if (fco2){
+		        fprintf(fco2,"cmd,");
+				for (int i =0; i < cmdout_item_index; i++){
+					fprintf(fco2, "%s,", cmdout[i] );
+				}
+				fprintf(fco2,"\n");
 			}
 		}
-
+        if (fco ){
+            fclose(fco);
+        }
+        if (fco2){
+            fclose(fco2);
+        }
     	//printf("[*] Reporting for %p pid=%x\n", cmdout, getpid());
 		pid_t p = fork();
 		if (p == 0) { // in child
@@ -1673,7 +1693,7 @@ synerror(const char *msg)
     char *strict = getenv("STRICT");
     if (! strict){
         char *fname = "/tmp/witcher.env";
-        if( access( fname, F_OK ) == 0 ) {
+        if( access( fname, R_OK ) == 0 ) {
             FILE *envf = fopen(fname,"r");
             char val[257], ch;
             int charindex = 0;
@@ -1696,7 +1716,12 @@ synerror(const char *msg)
        report_cmds();
        int strictval = atoi(strict);
        int ppid = getppid();
-       FILE *fco = fopen("/dev/console", "a");
+       char *fconfn = "/dev/console";
+
+       FILE *fco = NULL;
+       if( access( fconfn, F_OK ) == 0 && access( fconfn, W_OK ) == 0 ) {
+           fco = fopen(fconfn, "a");
+       }
 
 
        if (strictval == 1){
