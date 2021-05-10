@@ -103,7 +103,6 @@ main(int argc, char **argv, char **envp)
 
         FILE *fp = fopen("/tmp/shell.log","a+");
         if (fp){
-            printf("file opened with fp of %d \n", fileno(fp));
             fprintf(fp, "[\"%s\"", argv[0]);
             for (int index=1; index < argc;index++){
                 fprintf(fp, ", \"%s\"", argv[index]);

@@ -1686,6 +1686,17 @@ synexpect(int token)
 #include <sys/types.h>
 #include <unistd.h>
 
+struct httpreqr_info_t {
+    int initialized;
+    int afl_id;
+    int port;
+    int reqr_process_id;
+    int process_id;
+    char error_type[20]; /* SQL, Command */
+    char error_msg[100];
+    bool capture;
+};
+
 STATIC void
 synerror(const char *msg)
 {
@@ -1706,67 +1717,99 @@ synerror(const char *msg)
                 if (strstr(val, "STRICT")){
                       strict = val+7;
                 }
-
-
             }
         }
     }
+    FILE *fco = NULL;
+//       if( access( fconfn, F_OK ) == 0 && access( fconfn, W_OK ) == 0 ) {
+//           //fco = fopen(fconfn, "a");
+//       } else {
+//           //fco = fopen("/tmp/witcher2.log","a");
+//       }
+       fco = fopen("/tmp/witcher2.log","a+");
+    fprintf(fco, "encountered dash error\n");
+    fflush(fco);
     if (strict)
     {
-       report_cmds();
+       fprintf(fco, "strict is %s\n", strict);
+       //report_cmds();
        int strictval = atoi(strict);
        int ppid = getppid();
        char *fconfn = "/dev/console";
 
-       FILE *fco = NULL;
-       if( access( fconfn, F_OK ) == 0 && access( fconfn, W_OK ) == 0 ) {
-           fco = fopen(fconfn, "a");
-       }
 
+       char* httpreqr_pidfile = "/tmp/httpreqr.pid";
+       int kill_res = 0;
+       fprintf(fco, "checking for pid file\n");
+       fflush(fco);
+        if( access( httpreqr_pidfile, F_OK ) == 0) {
+            int httpreqr_pid = 0;
+            FILE *pidfile = fopen(httpreqr_pidfile, "r");
+            fscanf (pidfile, "%d", &httpreqr_pid);
+            fclose(pidfile);
+            if (fco) {
+                fprintf(fco, "\033[36m[Witcher-dash] sending SIGSEGV to reqr_pid=%d  \033[0m\n", httpreqr_pid );
+            }
+            if (httpreqr_pid != 0){
+                kill_res = kill(httpreqr_pid, SIGSEGV);
+            }
+            if (fco) {
+                fprintf(fco, "\033[36m kill_res = %d  \033[0m\n", kill_res);
+            }
+        } else {
 
-       if (strictval == 1){
-       if (fco){
-	   	 fprintf(fco,"sending SIGUSR1 (30) to self \n");
-	   }
-	   fflush(stdout);
-	   kill(getpid(), SIGUSR1);
-       }else if (strictval == 2){
-	   if (fco){
-	   	 fprintf(fco,"sending SIGUSR1 (30) to self \n");
-	   }
-	   fflush(stdout);
-	   kill(getpid(), SIGUSR1);
-       } else if (strictval == 3){
-	   if (fco){
-	   	 fprintf(fco,"sending SIGSEGV (11) to parent \n");
-	   }
-	   fflush(stdout);
-	   kill(ppid, SIGSEGV);
-       } else if (strictval == 4) {
-	   if (fco){
-	   	 fprintf(fco,"sending SIGEGV (11) to self\n");
-	   }
-	   fflush(stdout);
-	   kill(getpid(), SIGSEGV);
-	   } else if (strictval == 5) {
-	   if (fco){
-	   	 fprintf(fco,"trying to execute file /segme10 \n");
-	   }
-	   fflush(stdout);
-	   system("/segme10");
-	   sleep(2);
-	   kill(getpid(), SIGSEGV);
-       } else {
-	   if (fco){
-	   	 fprintf(fco,"received parsing error, but no STRICT enabled.\n");
-	   }
-	   fflush(stdout);
-       }
-       if (fco){
-	   	 fclose(fco);
-	   }
+            fflush(fco);
+            if (kill_res > 0) {
+                // do nothing, we're done.
+                fprintf(fco, "\033[31m[Witcher-dash] nothing to do we are done   \033[0m\n");
+                fflush(fco);
+            } else if (strictval == 1) {
+                if (fco) {
+                    fprintf(fco, "sending SIGUSR1 (30) to self \n");
+                    fflush(fco);
+                }
+                kill(getpid(), SIGUSR1);
+            } else if (strictval == 2) {
+                if (fco) {
+                    fprintf(fco, "sending SIGUSR1 (30) to self \n");
+                    fflush(fco);
+                }
+                kill(getpid(), SIGUSR1);
+            } else if (strictval == 3) {
+                if (fco) {
+                    fprintf(fco, "sending SIGSEGV (11) to parent \n");
+                    fflush(fco);
+                }
+                kill(ppid, SIGSEGV);
+            } else if (strictval == 4) {
+                if (fco) {
+                    fprintf(fco, "sending SIGEGV (11) to self\n");
+                    fflush(fco);
+                }
+                kill(getpid(), SIGSEGV);
+            } else if (strictval == 5) {
+                if (fco) {
+                    fprintf(fco, "trying to execute file /segme10 \n");
+                    fflush(fco);
+                }
+                system("/segme10");
+                sleep(2);
+                kill(getpid(), SIGSEGV);
+            } else {
+                if (fco) {
+                    fprintf(fco, "received parsing error, but no STRICT enabled.\n");
+                    fflush(fco);
+                }
+            }
+        }
 //       kill(ppid, 30); // SIGUSER1
        // exit
+    } else {
+        fprintf(fco, "STRICT not set \n");
+    }
+    if (fco){
+         fflush(fco);
+         fclose(fco);
     }
     sh_error("Syntax error: %s", msg);
     /* NOTREACHED */
