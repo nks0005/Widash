@@ -1702,6 +1702,8 @@ synerror(const char *msg)
 {
     errlinno = plinno;
     char *strict = getenv("STRICT");
+    char *proxy_str = getenv("PROXY_PID");
+    int proxy_pid = -1;
     if (! strict){
         char *fname = "/tmp/witcher.env";
         if( access( fname, R_OK ) == 0 ) {
@@ -1717,25 +1719,34 @@ synerror(const char *msg)
                 if (strstr(val, "STRICT")){
                       strict = val+7;
                 }
+
+                if (! proxy_str && (proxy_str = strstr(val, "PROXY_PID")) != NULL){
+                      proxy_str = proxy_str+10;
+                }
+
             }
         }
     }
+    if (proxy_str) {
+        proxy_pid = atoi(proxy_str);
+    }
+    char *fconfn = "/dev/console";
+
     FILE *fco = NULL;
-//       if( access( fconfn, F_OK ) == 0 && access( fconfn, W_OK ) == 0 ) {
-//           //fco = fopen(fconfn, "a");
-//       } else {
-//           //fco = fopen("/tmp/witcher2.log","a");
-//       }
-       fco = fopen("/tmp/witcher2.log","a+");
-    fprintf(fco, "encountered dash error\n");
-    fflush(fco);
+    if( access( fconfn, F_OK ) == 0 && access( fconfn, W_OK ) == 0 ) {
+        fco = fopen(fconfn, "a");
+    } else {
+        char *alt_fconfn = "/tmp/witcher.log";
+        if( access( alt_fconfn, F_OK ) == 0 && access( alt_fconfn, W_OK ) == 0 ) {
+            fco = fopen(alt_fconfn, "a");
+        }
+    }
+
     if (strict)
     {
-       fprintf(fco, "strict is %s\n", strict);
-       //report_cmds();
+       report_cmds();
        int strictval = atoi(strict);
        int ppid = getppid();
-       char *fconfn = "/dev/console";
 
 
        char* httpreqr_pidfile = "/tmp/httpreqr.pid";
@@ -1795,21 +1806,49 @@ synerror(const char *msg)
                 system("/segme10");
                 sleep(2);
                 kill(getpid(), SIGSEGV);
+            } else if (strictval == 6) {
+                if (fco) {
+                    if (proxy_pid) {
+                        fprintf(fco, "sending SIGSEGV (11) to proxy pid %d\n", proxy_pid);
+                    } else {
+                        fprintf(fco, "sending SIGSEGV (11) to proxy\n");
+                        fprintf(fco, "NO SUCH LUCK BB %s\n", proxy_str);
+                    }
+                }
+                fflush(stdout);
+                if (proxy_pid) {
+                    kill(proxy_pid, SIGSEGV);
+                } else {
+                    FILE *pg = popen("pgrep -f '^python /proxy.py'", "r");
+                    char pid_str[1024];
+                    int pid;
+                    if (pg == NULL) {
+                        if (fco) {
+                            fprintf(fco, "could not locate proxy pid \n");
+                        }
+                    } else {
+                        if (fgets(pid_str, 1024, pg)) {
+                            pid = atoi(pid_str);
+                            kill(pid, SIGSEGV);
+                        }
+                    }
+                }
+                kill(getpid(), SIGSEGV);
             } else {
                 if (fco) {
-                    fprintf(fco, "received parsing error, but no STRICT enabled.\n");
+                    fprintf(fco, "received parsing error, but STRICT set to invalid value.\n");
                     fflush(fco);
                 }
             }
+//          kill(ppid, 30); // SIGUSER1
+            // exit
         }
-//       kill(ppid, 30); // SIGUSER1
-       // exit
     } else {
         fprintf(fco, "STRICT not set \n");
     }
     if (fco){
-         fflush(fco);
-         fclose(fco);
+        fflush(fco);
+        fclose(fco);
     }
     sh_error("Syntax error: %s", msg);
     /* NOTREACHED */
