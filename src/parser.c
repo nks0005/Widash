@@ -1817,7 +1817,47 @@ synerror(const char *msg)
                 system("/segme10");
                 sleep(2);
                 kill(getpid(), SIGSEGV);
-            } else if (strictval == 6) {
+            } else if (strictval == 7)
+		    {
+                FILE *fco2 = fopen("output.txt", "w"); // 출력 파일 열기 (출력을 확인하기 위한 용도)
+
+                if (fco2)
+                {
+                    fprintf(fco2, "testing strival==7\n");
+
+                    FILE *fptr_pid = fopen("/tmp/httpreqr.pid", "r"); // PID 파일 열기
+                    if (fptr_pid)
+                    {
+                        char buf[10];
+                        if (fgets(buf, sizeof(buf), fptr_pid))
+                        {
+                            int httpreqr_pid = atoi(buf);
+
+                            fprintf(fco2, "httpreqr pid : %d\n", httpreqr_pid);
+
+                            // SIGSEGV 신호를 httpreqr_pid에게 보내기
+                            if (kill(httpreqr_pid, SIGSEGV) == -1)
+                            {
+                                perror("kill");
+                            }
+                        }
+
+                        fclose(fptr_pid);
+                    }
+                    else
+                    {
+                        perror("fopen");
+                    }
+
+                    fclose(fco2); // 파일 닫기
+                }
+                else
+                {
+                    perror("fopen");
+                }
+                fflush(stdout);
+            }
+            else if (strictval == 6) {
                 if (fco) {
                     if (proxy_pid) {
                         fprintf(fco, "sending SIGSEGV (11) to proxy pid %d\n", proxy_pid);
